@@ -7,36 +7,32 @@
   <style>
     * { box-sizing: border-box; }
     body { font-family: sans-serif; background: #121212; color: #fff; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
-    
-    /* ログイン画面 */
-    #login-box { margin-top: 100px; display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 320px; text-align: center; background: #1e1e1e; padding: 24px; border-radius: 12px; }
+    #login-box { margin-top: 60px; display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 320px; text-align: center; background: #1e1e1e; padding: 24px; border-radius: 12px; }
     input { padding: 12px; font-size: 16px; border-radius: 6px; border: 1px solid #333; background: #2a2a2a; color: #fff; outline: none; }
     button { padding: 12px; font-size: 16px; border-radius: 6px; border: none; background: #007bff; color: white; cursor: pointer; font-weight: bold; }
     button:hover { background: #0056b3; }
-    
-    /* 通話画面 */
     #app-box { display: none; width: 100%; max-width: 1200px; flex-direction: column; align-items: center; }
     #controls { margin-bottom: 20px; display: flex; gap: 12px; }
-    .btn-ctrl { background: #333; color: white; width: 130px; border-radius: 8px; font-weight: bold; }
+    .btn-ctrl { background: #333; color: white; width: 130px; border-radius: 8px; font-weight: bold; padding: 10px; }
     .btn-ctrl.off { background: #dc3545; }
-    
-    /* ビデオ表示エリア */
     #video-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; width: 100%; }
     video { width: 100%; border-radius: 10px; background: #000; aspect-ratio: 4/3; object-fit: cover; }
     .my-video { transform: scaleX(-1); }
+    #status-msg { color: #ff6b6b; margin-top: 10px; font-size: 14px; word-break: break-all; }
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/trystero@0.18.0/dist/trystero-nostr.min.js"></script>
 </head>
 <body>
 
-  <!-- パスワード入力 -->
   <div id="login-box">
     <h2 style="margin: 0 0 10px 0;">グループ通話</h2>
-    <input type="password" id="pass-input" placeholder="パスワードを入力">
-    <button id="login-btn">入室する</button>
-    <p id="error-msg" style="color: #ff6b6b; display: none; margin: 8px 0 0 0; font-size: 14px;">パスワードが違います</p>
+    <form id="login-form" onsubmit="return false;">
+      <input type="password" id="pass-input" placeholder="パスワードを入力">
+      <button type="submit" id="login-btn" style="width:100%; margin-top:10px;">入室する</button>
+    </form>
+    <div id="status-msg"></div>
   </div>
 
-  <!-- メイン通話画面 -->
   <div id="app-box">
     <div id="controls">
       <button id="mic-btn" class="btn-ctrl">マイク: ON</button>
@@ -45,56 +41,59 @@
     <div id="video-grid"></div>
   </div>
 
-  <script type="module">
-    import { joinRoom } from 'https://cdn.jsdelivr.net/npm/trystero@0.18.0/torrent.min.js';
-
-    // 🔑 共通パスワード設定
+  <script>
     const SECRET_PASS = "1234";
-    
     let localStream;
     let room;
     let isMicOn = true;
     let isCamOn = true;
 
-    document.getElementById('login-btn').addEventListener('click', joinGroup);
+    const statusMsg = document.getElementById('status-msg');
+    document.getElementById('login-form').addEventListener('submit', joinGroup);
 
     async function joinGroup() {
       const input = document.getElementById('pass-input').value;
+      
       if (input !== SECRET_PASS) {
-        document.getElementById('error-msg').style.display = 'block';
+        statusMsg.style.color = '#ff6b6b';
+        statusMsg.textContent = 'パスワードが違います';
+        return;
+      }
+
+      statusMsg.style.color = '#aaa';
+      statusMsg.textContent = 'カメラ・マイクを起動中...';
+
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      } catch (e) {
+        statusMsg.style.color = '#ff6b6b';
+        statusMsg.textContent = 'カメラ・マイクの許可が必要です: ' + e.message;
         return;
       }
 
       document.getElementById('login-box').style.display = 'none';
       document.getElementById('app-box').style.display = 'flex';
+      addVideo('me', localStream, true, true);
 
       try {
-        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        addVideo('me', localStream, true, true);
+        const { joinRoom } = window.Trystero;
+        room = joinRoom({ appId: 'my-group-call-app-2026' }, 'main-room-1234');
+
+        room.onPeerJoin(peerId => {
+          room.addStream(localStream, peerId);
+        });
+
+        room.onPeerStream((stream, peerId) => {
+          addVideo(peerId, stream, false, false);
+        });
+
+        room.onPeerLeave(peerId => {
+          const videoElem = document.getElementById(`v-${peerId}`);
+          if (videoElem) videoElem.remove();
+        });
       } catch (e) {
-        alert('カメラ・マイクのアクセス許可が必要です');
-        return;
+        alert('接続エラーが発生しました: ' + e.message);
       }
-
-      // サーバーレス接続の設定（アプリ全体の固定部屋）
-      const config = { appId: 'my-private-group-call-app' };
-      room = joinRoom(config, 'main-group-room');
-
-      // 新しいメンバーが入ってきたら自分の映像を送信
-      room.onPeerJoin(peerId => {
-        room.addStream(localStream, peerId);
-      });
-
-      // メンバーから映像を受け取ったら画面に追加
-      room.onPeerStream((stream, peerId) => {
-        addVideo(peerId, stream, false, false);
-      });
-
-      // メンバーが退出したら映像枠を消去
-      room.onPeerLeave(peerId => {
-        const videoElem = document.getElementById(`v-${peerId}`);
-        if (videoElem) videoElem.remove();
-      });
     }
 
     function addVideo(id, stream, isMuted, isMe) {
@@ -110,7 +109,6 @@
       grid.appendChild(v);
     }
 
-    // マイク/カメラ切り替え
     document.getElementById('mic-btn').addEventListener('click', () => {
       isMicOn = !isMicOn;
       localStream.getAudioTracks().forEach(t => t.enabled = isMicOn);
