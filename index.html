@@ -13,14 +13,13 @@
     button:hover { background: #0056b3; }
     #app-box { display: none; width: 100%; max-width: 1200px; flex-direction: column; align-items: center; }
     #controls { margin-bottom: 20px; display: flex; gap: 12px; }
-    .btn-ctrl { background: #333; color: white; width: 130px; border-radius: 8px; font-weight: bold; padding: 10px; }
+    .btn-ctrl { background: #333; color: white; width: 130px; border-radius: 8px; font-weight: bold; padding: 10px; cursor: pointer; }
     .btn-ctrl.off { background: #dc3545; }
     #video-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; width: 100%; }
     video { width: 100%; border-radius: 10px; background: #000; aspect-ratio: 4/3; object-fit: cover; }
     .my-video { transform: scaleX(-1); }
     #status-msg { color: #ff6b6b; margin-top: 10px; font-size: 14px; word-break: break-all; }
   </style>
-  <script src="https://cdn.jsdelivr.net/npm/trystero@0.18.0/dist/trystero-nostr.min.js"></script>
 </head>
 <body>
 
@@ -41,7 +40,9 @@
     <div id="video-grid"></div>
   </div>
 
-  <script>
+  <script type="module">
+    import { joinRoom } from 'https://cdn.jsdelivr.net/npm/trystero@0.18.0/dist/trystero-nostr.min.js';
+
     const SECRET_PASS = "1234";
     let localStream;
     let room;
@@ -76,7 +77,6 @@
       addVideo('me', localStream, true, true);
 
       try {
-        const { joinRoom } = window.Trystero;
         room = joinRoom({ appId: 'my-group-call-app-2026' }, 'main-room-1234');
 
         room.onPeerJoin(peerId => {
