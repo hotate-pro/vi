@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>グループ通話</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: sans-serif; background: #121212; color: #fff; margin: 0; padding: 20px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
+    
+    /* ログイン画面 */
+    #login-box { margin-top: 100px; display: flex; flex-direction: column; gap: 12px; width: 100%; max-width: 320px; text-align: center; background: #1e1e1e; padding: 24px; border-radius: 12px; }
+    input { padding: 12px; font-size: 16px; border-radius: 6px; border: 1px solid #333; background: #2a2a2a; color: #fff; outline: none; }
+    button { padding: 12px; font-size: 16px; border-radius: 6px; border: none; background: #007bff; color: white; cursor: pointer; font-weight: bold; }
+    button:hover { background: #0056b3; }
+    
+    /* 通話画面 */
+    #app-box { display: none; width: 100%; max-width: 1200px; flex-direction: column; align-items: center; }
+    #controls { margin-bottom: 20px; display: flex; gap: 12px; }
+    .btn-ctrl { background: #333; color: white; width: 130px; border-radius: 8px; font-weight: bold; }
+    .btn-ctrl.off { background: #dc3545; }
+    
+    /* ビデオ表示エリア */
+    #video-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; width: 100%; }
+    video { width: 100%; border-radius: 10px; background: #000; aspect-ratio: 4/3; object-fit: cover; }
+    .my-video { transform: scaleX(-1); }
+  </style>
+</head>
+<body>
+
+  <!-- パスワード入力 -->
+  <div id="login-box">
+    <h2 style="margin: 0 0 10px 0;">グループ通話</h2>
+    <input type="password" id="pass-input" placeholder="パスワードを入力">
+    <button id="login-btn">入室する</button>
+    <p id="error-msg" style="color: #ff6b6b; display: none; margin: 8px 0 0 0; font-size: 14px;">パスワードが違います</p>
+  </div>
+
+  <!-- メイン通話画面 -->
+  <div id="app-box">
+    <div id="controls">
+      <button id="mic-btn" class="btn-ctrl">マイク: ON</button>
+      <button id="cam-btn" class="btn-ctrl">カメラ: ON</button>
+    </div>
+    <div id="video-grid"></div>
+  </div>
+
+  <script type="module">
+    import { joinRoom } from 'https://cdn.jsdelivr.net/npm/trystero@0.18.0/torrent.min.js';
+
+    // 🔑 共通パスワード設定
+    const SECRET_PASS = "1234";
+    
+    let localStream;
+    let room;
+    let isMicOn = true;
+    let isCamOn = true;
+
+    document.getElementById('login-btn').addEventListener('click', joinGroup);
+
+    async function joinGroup() {
+      const input = document.getElementById('pass-input').value;
+      if (input !== SECRET_PASS) {
+        document.getElementById('error-msg').style.display = 'block';
+        return;
+      }
+
+      document.getElementById('login-box').style.display = 'none';
+      document.getElementById('app-box').style.display = 'flex';
+
+      try {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        addVideo('me', localStream, true, true);
+      } catch (e) {
+        alert('カメラ・マイクのアクセス許可が必要です');
+        return;
+      }
+
+      // サーバーレス接続の設定（アプリ全体の固定部屋）
+      const config = { appId: 'my-private-group-call-app' };
+      room = joinRoom(config, 'main-group-room');
+
+      // 新しいメンバーが入ってきたら自分の映像を送信
+      room.onPeerJoin(peerId => {
+        room.addStream(localStream, peerId);
+      });
+
+      // メンバーから映像を受け取ったら画面に追加
+      room.onPeerStream((stream, peerId) => {
+        addVideo(peerId, stream, false, false);
+      });
+
+      // メンバーが退出したら映像枠を消去
+      room.onPeerLeave(peerId => {
+        const videoElem = document.getElementById(`v-${peerId}`);
+        if (videoElem) videoElem.remove();
+      });
+    }
+
+    function addVideo(id, stream, isMuted, isMe) {
+      if (document.getElementById(`v-${id}`)) return;
+      const grid = document.getElementById('video-grid');
+      const v = document.createElement('video');
+      v.id = `v-${id}`;
+      v.srcObject = stream;
+      v.autoplay = true;
+      v.playsInline = true;
+      if (isMuted) v.muted = true;
+      if (isMe) v.classList.add('my-video');
+      grid.appendChild(v);
+    }
+
+    // マイク/カメラ切り替え
+    document.getElementById('mic-btn').addEventListener('click', () => {
+      isMicOn = !isMicOn;
+      localStream.getAudioTracks().forEach(t => t.enabled = isMicOn);
+      const btn = document.getElementById('mic-btn');
+      btn.textContent = `マイク: ${isMicOn ? 'ON' : 'OFF'}`;
+      btn.classList.toggle('off', !isMicOn);
+    });
+
+    document.getElementById('cam-btn').addEventListener('click', () => {
+      isCamOn = !isCamOn;
+      localStream.getVideoTracks().forEach(t => t.enabled = isCamOn);
+      const btn = document.getElementById('cam-btn');
+      btn.textContent = `カメラ: ${isCamOn ? 'ON' : 'OFF'}`;
+      btn.classList.toggle('off', !isCamOn);
+    });
+  </script>
+</body>
+</html>
